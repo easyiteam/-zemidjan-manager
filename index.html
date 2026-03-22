@@ -169,22 +169,7 @@ tr:hover td{background:var(--surface2)}
 </head>
 <body>
 
-<!-- Configuration screen (first run) -->
-<div class="config-screen" id="config-screen">
-  <div class="config-box">
-    <div class="config-title">Configuration Firebase</div>
-    <div class="config-sub">Collez votre configuration Firebase (objet <code>firebaseConfig</code> copié depuis la console Firebase).</div>
-    <div class="form-group" style="margin-bottom:1rem">
-      <label>Firebase Config (JSON)</label>
-      <textarea id="firebase-config-input" rows="8" style="padding:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;resize:vertical;width:100%;outline:none"></textarea>
-    </div>
-    <div id="config-err" class="form-err"></div>
-    <button class="btn btn-primary" onclick="applyConfig()" style="width:100%">Démarrer l'application</button>
-    <div style="margin-top:1rem;font-size:12px;color:var(--muted)">
-      Besoin d'aide ? Consultez le guide <code>GUIDE.md</code> fourni avec ce fichier.
-    </div>
-  </div>
-</div>
+<!-- Config intégrée -->
 
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
@@ -315,46 +300,23 @@ import {
 
 // ── Firebase init ──────────────────────────────────────────────────────────
 
-const STORAGE_KEY = 'zm_firebase_config';
 let db = null;
 let unsubscribe = null;
 let contrats = [];
 let editId = null;
 
-function getStoredConfig() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e) { return null; }
-}
-
-function initFirebase(config) {
-  const app = initializeApp(config);
-  db = getFirestore(app);
-  document.getElementById('config-screen').classList.remove('show');
-  startApp();
-}
-
-window.applyConfig = function() {
-  const raw = document.getElementById('firebase-config-input').value.trim();
-  const errEl = document.getElementById('config-err');
-  errEl.textContent = '';
-  try {
-    let cfg = raw;
-    // Remove "const firebaseConfig = " wrapper if present
-    cfg = cfg.replace(/^[\s\S]*?=\s*/, '').replace(/;?\s*$/, '');
-    const parsed = JSON.parse(cfg);
-    if (!parsed.apiKey || !parsed.projectId) throw new Error('Champs manquants');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-    initFirebase(parsed);
-  } catch(e) {
-    errEl.textContent = 'Configuration invalide. Vérifiez le JSON copié depuis Firebase Console.';
-  }
+const firebaseConfig = {
+  apiKey: "AIzaSyBTVog7cZQUurRkyYv6SwIEQ4cYZh5dARA",
+  authDomain: "zemidjan-manager-69938.firebaseapp.com",
+  projectId: "zemidjan-manager-69938",
+  storageBucket: "zemidjan-manager-69938.firebasestorage.app",
+  messagingSenderId: "320326340146",
+  appId: "1:320326340146:web:b3f9a16cdccacca9af762b"
 };
 
-const saved = getStoredConfig();
-if (saved) {
-  initFirebase(saved);
-} else {
-  document.getElementById('config-screen').classList.add('show');
-}
+const app = initializeApp(firebaseConfig);
+db = getFirestore(app);
+startApp();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
