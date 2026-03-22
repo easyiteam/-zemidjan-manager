@@ -293,6 +293,8 @@ tr:hover td{background:var(--surface2)}
 
 <!-- Firebase SDKs -->
 <script type="module">
+// Expose globals immediately so onclick handlers work before module fully loads
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getFirestore, collection, doc, getDocs, setDoc, deleteDoc, updateDoc, onSnapshot, getDoc
@@ -304,6 +306,15 @@ let db = null;
 let unsubscribe = null;
 let contrats = [];
 let editId = null;
+
+const MOIS = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc'];
+
+function today() { return new Date().toISOString().split('T')[0]; }
+function fmtDate(str) {
+  if (!str) return '—';
+  const d = new Date(str + 'T00:00:00');
+  return `${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`;
+}
 
 const firebaseConfig = {
   apiKey: "AIzaSyBTVog7cZQUurRkyYv6SwIEQ4cYZh5dARA",
@@ -320,13 +331,7 @@ startApp();
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-const MOIS = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc'];
-function today() { return new Date().toISOString().split('T')[0]; }
-function fmtDate(str) {
-  if (!str) return '—';
-  const d = new Date(str + 'T00:00:00');
-  return `${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`;
-}
+
 function addWeeks(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + n * 7);
@@ -572,7 +577,7 @@ window.showSection = function(sec, el) {
   if (el) el.classList.add('active');
   const titles = { dashboard:'Tableau de bord', contrats:'Contrats', paiements:'Paiements', alertes:'Alertes' };
   document.getElementById('page-title').textContent = titles[sec] || sec;
-  closeSidebar();
+  window.closeSidebar();
 };
 
 window.goToEcheancier = function(id) {
