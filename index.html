@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Zémidjan Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg: #0f0f0f;
+  --surface: #1a1a1a;
+  --surface2: #222222;
+  --border: #2e2e2e;
+  --border2: #3a3a3a;
+  --text: #e8e4dc;
+  --muted: #888;
+  --accent: #c8a96e;
+  --accent2: #e8c98e;
+  --danger: #e05c5c;
+  --success: #5cb88a;
+  --warning: #e09a3c;
+  --info: #5b9bd5;
+  --radius: 6px;
+  --radius-lg: 10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:14px;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+
+/* Layout */
+.shell{display:flex;min-height:100vh}
+.sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:50;transition:transform .25s}
+.sidebar-logo{padding:1.5rem 1.25rem 1rem;border-bottom:1px solid var(--border)}
+.sidebar-logo .logo-mark{font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:500;color:var(--accent);letter-spacing:-0.5px}
+.sidebar-logo .logo-sub{font-size:11px;color:var(--muted);margin-top:2px;letter-spacing:1px;text-transform:uppercase}
+.sidebar-nav{padding:1rem 0;flex:1}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 1.25rem;cursor:pointer;color:var(--muted);font-size:13px;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(200,169,110,0.06)}
+.nav-icon{width:16px;text-align:center;font-size:14px}
+.main{margin-left:220px;flex:1;padding:2rem;max-width:calc(100vw - 220px)}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem;flex-wrap:wrap;gap:12px}
+.page-title{font-size:20px;font-weight:600;letter-spacing:-0.3px}
+.page-sub{font-size:12px;color:var(--muted);margin-top:2px;font-family:'IBM Plex Mono',monospace}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;font-size:13px;font-family:'IBM Plex Sans',sans-serif;transition:all .15s}
+.btn:hover{background:var(--surface2);border-color:var(--border2)}
+.btn-primary{background:var(--accent);color:#0f0f0f;border-color:var(--accent);font-weight:500}
+.btn-primary:hover{background:var(--accent2)}
+.btn-danger{color:var(--danger);border-color:rgba(224,92,92,0.3)}
+.btn-danger:hover{background:rgba(224,92,92,0.08)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-success{color:var(--success);border-color:rgba(92,184,138,0.3)}
+.btn-success:hover{background:rgba(92,184,138,0.08)}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem}
+.card-title{font-size:13px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:1rem}
+
+/* Stats */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:1.5rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.c-gold::before{background:var(--accent)}
+.stat-card.c-green::before{background:var(--success)}
+.stat-card.c-red::before{background:var(--danger)}
+.stat-card.c-blue::before{background:var(--info)}
+.stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:.5rem}
+.stat-val{font-size:26px;font-weight:600;font-family:'IBM Plex Mono',monospace;line-height:1}
+.stat-val.gold{color:var(--accent)}
+.stat-val.green{color:var(--success)}
+.stat-val.red{color:var(--danger)}
+.stat-val.blue{color:var(--info)}
+
+/* Table */
+.table-wrap{overflow-x:auto;border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2)}
+.tr-paye td{background:rgba(92,184,138,0.04)}
+.tr-retard td{background:rgba(224,92,92,0.04)}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500;font-family:'IBM Plex Mono',monospace;letter-spacing:.2px}
+.badge-actif{background:rgba(92,184,138,0.12);color:var(--success);border:1px solid rgba(92,184,138,0.2)}
+.badge-retard{background:rgba(224,92,92,0.12);color:var(--danger);border:1px solid rgba(224,92,92,0.2)}
+.badge-termine{background:rgba(136,136,136,0.12);color:var(--muted);border:1px solid var(--border)}
+.badge-paye{background:rgba(92,184,138,0.12);color:var(--success);border:1px solid rgba(92,184,138,0.2)}
+.badge-avenir{background:rgba(91,155,213,0.12);color:var(--info);border:1px solid rgba(91,155,213,0.2)}
+
+/* Progress */
+.progress{height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:6px;width:100%}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .4s}
+
+/* Forms */
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center;padding:1rem}
+.modal-backdrop.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:1.5rem;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;margin-bottom:1.25rem;letter-spacing:-.2px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:1rem}
+.form-full{grid-column:1/-1}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.form-group input,.form-group select{padding:9px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;outline:none;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus{border-color:var(--accent)}
+.form-group select option{background:var(--surface2)}
+.form-err{color:var(--danger);font-size:12px;margin-bottom:8px}
+.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:1rem}
+
+/* Alerts */
+.alert{padding:10px 14px;border-radius:var(--radius);font-size:13px;margin-bottom:8px;border-left:3px solid;display:flex;align-items:flex-start;gap:10px}
+.alert-danger{background:rgba(224,92,92,0.08);border-color:var(--danger);color:#f0a0a0}
+.alert-warning{background:rgba(224,154,60,0.08);border-color:var(--warning);color:#f0c070}
+.alert-success{background:rgba(92,184,138,0.08);border-color:var(--success);color:#80d8aa}
+.alert-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+
+/* Section visibility */
+.section{display:none}.section.active{display:block}
+
+/* Mobile */
+.hamburger{display:none;background:none;border:none;cursor:pointer;padding:8px;color:var(--text);font-size:20px}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:40}
+
+/* Contract detail */
+.detail-header{display:flex;align-items:center;gap:12px;margin-bottom:1.5rem;flex-wrap:wrap}
+.avatar{width:44px;height:44px;border-radius:50%;background:rgba(200,169,110,0.15);border:1px solid rgba(200,169,110,0.3);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;color:var(--accent);flex-shrink:0;font-family:'IBM Plex Mono',monospace}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:1.25rem}
+.info-item{background:var(--surface2);border-radius:var(--radius);padding:10px 12px}
+.info-item .k{font-size:11px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px}
+.info-item .v{font-size:13px;font-family:'IBM Plex Mono',monospace}
+
+/* Loading */
+.loader{text-align:center;padding:3rem;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:13px}
+.loader::after{content:'...';animation:dots 1.2s infinite}
+@keyframes dots{0%{content:''}33%{content:'.'}66%{content:'..'}100%{content:'...'}}
+
+/* Mono numbers */
+.mono{font-family:'IBM Plex Mono',monospace}
+
+/* Empty state */
+.empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.empty-icon{font-size:32px;margin-bottom:.75rem;opacity:.4}
+.empty-text{font-size:13px}
+
+/* Responsive */
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-overlay.open{display:block}
+  .main{margin-left:0;padding:1rem;max-width:100vw}
+  .hamburger{display:block}
+  .form-grid{grid-template-columns:1fr}
+  .topbar{flex-direction:column;align-items:flex-start}
+  .stat-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:400px){.stat-grid{grid-template-columns:1fr}}
+
+/* Config screen */
+.config-screen{display:none;position:fixed;inset:0;background:var(--bg);z-index:999;align-items:center;justify-content:center;padding:1.5rem}
+.config-screen.show{display:flex}
+.config-box{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:2rem;width:100%;max-width:480px}
+.config-title{font-size:18px;font-weight:600;margin-bottom:.5rem;color:var(--accent)}
+.config-sub{font-size:13px;color:var(--muted);margin-bottom:1.5rem;line-height:1.6}
+.code-block{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent2);margin-bottom:1rem;word-break:break-all}
+</style>
+</head>
+<body>
+
+<!-- Configuration screen (first run) -->
+<div class="config-screen" id="config-screen">
+  <div class="config-box">
+    <div class="config-title">Configuration Firebase</div>
+    <div class="config-sub">Collez votre configuration Firebase (objet <code>firebaseConfig</code> copié depuis la console Firebase).</div>
+    <div class="form-group" style="margin-bottom:1rem">
+      <label>Firebase Config (JSON)</label>
+      <textarea id="firebase-config-input" rows="8" style="padding:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:12px;resize:vertical;width:100%;outline:none"></textarea>
+    </div>
+    <div id="config-err" class="form-err"></div>
+    <button class="btn btn-primary" onclick="applyConfig()" style="width:100%">Démarrer l'application</button>
+    <div style="margin-top:1rem;font-size:12px;color:var(--muted)">
+      Besoin d'aide ? Consultez le guide <code>GUIDE.md</code> fourni avec ce fichier.
+    </div>
+  </div>
+</div>
+
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">ZM//</div>
+      <div class="logo-sub">Zémidjan Manager</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showSection('dashboard',this)"><span class="nav-icon">◈</span> Tableau de bord</div>
+      <div class="nav-item" onclick="showSection('contrats',this)"><span class="nav-icon">◻</span> Contrats</div>
+      <div class="nav-item" onclick="showSection('paiements',this)"><span class="nav-icon">◷</span> Paiements</div>
+      <div class="nav-item" onclick="showSection('alertes',this)"><span class="nav-icon">◬</span> Alertes <span id="alert-badge" style="display:none;margin-left:4px;background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px"></span></div>
+    </nav>
+    <div style="padding:1rem 1.25rem;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace" id="sync-status">En ligne</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:2rem;flex-wrap:wrap">
+      <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <div style="flex:1;min-width:0">
+        <div class="page-title" id="page-title">Tableau de bord</div>
+        <div class="page-sub" id="page-sub"></div>
+      </div>
+      <button class="btn btn-primary" onclick="openModal()">+ Nouveau contrat</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="section-dashboard" class="section active">
+      <div class="stat-grid" id="stats-grid">
+        <div class="stat-card c-gold"><div class="stat-label">Contrats</div><div class="stat-val gold" id="s-total">—</div></div>
+        <div class="stat-card c-green"><div class="stat-label">Actifs</div><div class="stat-val green" id="s-actif">—</div></div>
+        <div class="stat-card c-red"><div class="stat-label">En retard</div><div class="stat-val red" id="s-retard">—</div></div>
+        <div class="stat-card c-blue"><div class="stat-label">Total perçu (FCFA)</div><div class="stat-val blue mono" id="s-total-paye">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Contrats actifs</div>
+        <div id="dash-list"><div class="loader">Chargement</div></div>
+      </div>
+    </div>
+
+    <!-- Contrats -->
+    <div id="section-contrats" class="section">
+      <div class="card">
+        <div class="card-title">Tous les contrats</div>
+        <div class="table-wrap">
+          <table id="table-contrats">
+            <thead><tr><th>Conducteur</th><th>Moto / Immat.</th><th>Début</th><th>Versement</th><th>Progression</th><th>Statut</th><th></th></tr></thead>
+            <tbody id="tbody-contrats"><tr><td colspan="7"><div class="loader">Chargement</div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paiements -->
+    <div id="section-paiements" class="section">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem;flex-wrap:wrap">
+        <select id="sel-contrat" onchange="loadEcheancier()" style="padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;outline:none;min-width:220px">
+          <option value="">— Sélectionner un contrat —</option>
+        </select>
+        <div id="ech-summary" style="font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace"></div>
+      </div>
+      <div id="ech-container"></div>
+    </div>
+
+    <!-- Alertes -->
+    <div id="section-alertes" class="section">
+      <div id="alertes-container"><div class="loader">Chargement</div></div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal nouveau/edit contrat -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title" id="modal-title">Nouveau contrat</div>
+    <div class="form-grid">
+      <div class="form-group form-full">
+        <label>Nom complet du conducteur *</label>
+        <input id="f-nom" placeholder="ASSOGBA Cyr Prosper"/>
+      </div>
+      <div class="form-group">
+        <label>Téléphone</label>
+        <input id="f-tel" placeholder="01 XX XX XX XX"/>
+      </div>
+      <div class="form-group">
+        <label>Marque / Modèle *</label>
+        <input id="f-moto" placeholder="RIK PASS SK"/>
+      </div>
+      <div class="form-group">
+        <label>Immatriculation *</label>
+        <input id="f-immat" placeholder="2FU7233RB"/>
+      </div>
+      <div class="form-group">
+        <label>N° de châssis</label>
+        <input id="f-chassis" placeholder="MCG52P3PBC..."/>
+      </div>
+      <div class="form-group">
+        <label>Versement hebdo (FCFA) *</label>
+        <input id="f-montant" type="number" value="30000"/>
+      </div>
+      <div class="form-group">
+        <label>Date du 1er versement *</label>
+        <input id="f-debut" type="date"/>
+      </div>
+      <div class="form-group">
+        <label>Durée (semaines) *</label>
+        <input id="f-duree" type="number" value="130"/>
+      </div>
+    </div>
+    <div class="form-err" id="form-err"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Annuler</button>
+      <button class="btn btn-primary" onclick="saveContrat()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import {
+  getFirestore, collection, doc, getDocs, setDoc, deleteDoc, updateDoc, onSnapshot, getDoc
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ── Firebase init ──────────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'zm_firebase_config';
+let db = null;
+let unsubscribe = null;
+let contrats = [];
+let editId = null;
+
+function getStoredConfig() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch(e) { return null; }
+}
+
+function initFirebase(config) {
+  const app = initializeApp(config);
+  db = getFirestore(app);
+  document.getElementById('config-screen').classList.remove('show');
+  startApp();
+}
+
+window.applyConfig = function() {
+  const raw = document.getElementById('firebase-config-input').value.trim();
+  const errEl = document.getElementById('config-err');
+  errEl.textContent = '';
+  try {
+    let cfg = raw;
+    // Remove "const firebaseConfig = " wrapper if present
+    cfg = cfg.replace(/^[\s\S]*?=\s*/, '').replace(/;?\s*$/, '');
+    const parsed = JSON.parse(cfg);
+    if (!parsed.apiKey || !parsed.projectId) throw new Error('Champs manquants');
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    initFirebase(parsed);
+  } catch(e) {
+    errEl.textContent = 'Configuration invalide. Vérifiez le JSON copié depuis Firebase Console.';
+  }
+};
+
+const saved = getStoredConfig();
+if (saved) {
+  initFirebase(saved);
+} else {
+  document.getElementById('config-screen').classList.add('show');
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const MOIS = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc'];
+function today() { return new Date().toISOString().split('T')[0]; }
+function fmtDate(str) {
+  if (!str) return '—';
+  const d = new Date(str + 'T00:00:00');
+  return `${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`;
+}
+function addWeeks(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n * 7);
+  return d.toISOString().split('T')[0];
+}
+function getSemaines(c) {
+  const list = [];
+  for (let i = 0; i < c.duree; i++) {
+    list.push({ num: i+1, date: addWeeks(c.debut, i) });
+  }
+  return list;
+}
+function getStatut(c) {
+  const td = today();
+  const fin = addWeeks(c.debut, c.duree);
+  if (td > fin) return 'termine';
+  const dues = getSemaines(c).filter(s => s.date <= td);
+  return dues.some(s => !(c.paiements || {})[s.date]) ? 'retard' : 'actif';
+}
+function countRetard(c) {
+  const td = today();
+  return getSemaines(c).filter(s => s.date <= td && !(c.paiements || {})[s.date]).length;
+}
+function totalPaye(c) {
+  return Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length * c.montant;
+}
+function pct(c) {
+  const paye = Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length;
+  return Math.round((paye / c.duree) * 100);
+}
+function initials(nom) {
+  return nom.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
+}
+function badgeHtml(st, n) {
+  if (st==='actif') return `<span class="badge badge-actif">Actif</span>`;
+  if (st==='retard') return `<span class="badge badge-retard">Retard ${n>0?'('+n+')':''}</span>`;
+  return `<span class="badge badge-termine">Terminé</span>`;
+}
+
+// ── Firestore ──────────────────────────────────────────────────────────────
+
+function startApp() {
+  if (unsubscribe) unsubscribe();
+  unsubscribe = onSnapshot(collection(db, 'contrats'), (snap) => {
+    contrats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    refreshAll();
+    document.getElementById('sync-status').textContent = '● En ligne — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+  }, () => {
+    document.getElementById('sync-status').textContent = '○ Hors ligne';
+  });
+
+  const td = today();
+  document.getElementById('page-sub').textContent = fmtDate(td);
+  populateSelect();
+}
+
+async function saveContratFn() {
+  const nom = document.getElementById('f-nom').value.trim();
+  const tel = document.getElementById('f-tel').value.trim();
+  const moto = document.getElementById('f-moto').value.trim();
+  const immat = document.getElementById('f-immat').value.trim();
+  const chassis = document.getElementById('f-chassis').value.trim();
+  const montant = parseInt(document.getElementById('f-montant').value) || 0;
+  const debut = document.getElementById('f-debut').value;
+  const duree = parseInt(document.getElementById('f-duree').value) || 0;
+  const errEl = document.getElementById('form-err');
+  errEl.textContent = '';
+  if (!nom || !moto || !immat || !debut || !montant || !duree) {
+    errEl.textContent = 'Veuillez remplir les champs obligatoires (*).';
+    return;
+  }
+  const data = { nom, tel, moto, immat, chassis, montant, debut, duree,
+    paiements: editId ? (contrats.find(c=>c.id===editId)?.paiements||{}) : {} };
+  const id = editId || Date.now().toString();
+  await setDoc(doc(db, 'contrats', id), data);
+  closeModal();
+}
+
+async function deleteFn(id) {
+  if (!confirm('Supprimer ce contrat définitivement ?')) return;
+  await deleteDoc(doc(db, 'contrats', id));
+}
+
+async function togglePaiement(id, date, paye) {
+  const c = contrats.find(x => x.id === id);
+  if (!c) return;
+  const paiements = { ...(c.paiements || {}) };
+  if (paye) paiements[date] = true;
+  else delete paiements[date];
+  await updateDoc(doc(db, 'contrats', id), { paiements });
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+
+function refreshAll() {
+  renderStats();
+  renderDashboard();
+  renderContratsTable();
+  renderAlertes();
+  populateSelect();
+  const selId = document.getElementById('sel-contrat').value;
+  if (selId) renderEcheancier(selId);
+}
+
+function renderStats() {
+  const actifs = contrats.filter(c => getStatut(c) === 'actif').length;
+  const retards = contrats.filter(c => getStatut(c) === 'retard').length;
+  const totalP = contrats.reduce((s,c) => s + totalPaye(c), 0);
+  document.getElementById('s-total').textContent = contrats.length;
+  document.getElementById('s-actif').textContent = actifs;
+  document.getElementById('s-retard').textContent = retards;
+  document.getElementById('s-total-paye').textContent = totalP.toLocaleString('fr-FR');
+  const badge = document.getElementById('alert-badge');
+  if (retards > 0) { badge.style.display='inline'; badge.textContent=retards; }
+  else badge.style.display='none';
+}
+
+function renderDashboard() {
+  const el = document.getElementById('dash-list');
+  const actifs = contrats.filter(c => getStatut(c) !== 'termine');
+  if (actifs.length === 0) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Aucun contrat actif</div></div>';
+    return;
+  }
+  el.innerHTML = actifs.map(c => {
+    const st = getStatut(c);
+    const p = pct(c);
+    const ret = countRetard(c);
+    return `<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap" class="contract-row">
+      <div class="avatar">${initials(c.nom)}</div>
+      <div style="flex:1;min-width:140px">
+        <div style="font-weight:500;margin-bottom:2px">${c.nom}</div>
+        <div style="color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace">${c.moto} · ${c.immat}</div>
+        <div class="progress" style="margin-top:8px;max-width:220px"><div class="progress-fill" style="width:${p}%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'IBM Plex Mono',monospace">${p}% · ${totalPaye(c).toLocaleString('fr-FR')} FCFA perçus</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+        ${badgeHtml(st, ret)}
+        <button class="btn btn-sm" onclick="goToEcheancier('${c.id}')">Échéancier →</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderContratsTable() {
+  const tbody = document.getElementById('tbody-contrats');
+  if (contrats.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Aucun contrat</div></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = contrats.map(c => {
+    const st = getStatut(c);
+    const p = pct(c);
+    const fin = addWeeks(c.debut, c.duree);
+    return `<tr>
+      <td><div style="font-weight:500">${c.nom}</div><div style="color:var(--muted);font-size:12px">${c.tel||''}</div></td>
+      <td><span class="mono">${c.moto}</span><br/><span style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${c.immat}</span></td>
+      <td class="mono" style="font-size:12px">${fmtDate(c.debut)}<br/><span style="color:var(--muted)">→ ${fmtDate(fin)}</span></td>
+      <td class="mono">${(c.montant||0).toLocaleString('fr-FR')}</td>
+      <td style="min-width:120px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-family:'IBM Plex Mono',monospace">${p}%</div>
+        <div class="progress"><div class="progress-fill" style="width:${p}%"></div></div>
+      </td>
+      <td>${badgeHtml(st, countRetard(c))}</td>
+      <td><div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="editContrat('${c.id}')">Modifier</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteFn('${c.id}')">✕</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function populateSelect() {
+  const sel = document.getElementById('sel-contrat');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— Sélectionner un contrat —</option>' +
+    contrats.map(c => `<option value="${c.id}" ${c.id===cur?'selected':''}>${c.nom} (${c.immat})</option>`).join('');
+}
+
+function renderEcheancier(id) {
+  const container = document.getElementById('ech-container');
+  const sumEl = document.getElementById('ech-summary');
+  if (!id) { container.innerHTML = ''; sumEl.textContent = ''; return; }
+  const c = contrats.find(x => x.id === id);
+  if (!c) return;
+  const td = today();
+  const semaines = getSemaines(c);
+  const payeCount = semaines.filter(s => (c.paiements||{})[s.date]).length;
+  const retardCount = countRetard(c);
+  sumEl.textContent = `${payeCount}/${c.duree} sem. payées · retard: ${retardCount} · total: ${(c.duree*c.montant).toLocaleString('fr-FR')} FCFA`;
+
+  container.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>N°</th><th>Date</th><th>Montant</th><th>Statut</th><th>Action</th></tr></thead>
+    <tbody>${semaines.map(s => {
+      const estPaye = !!(c.paiements||{})[s.date];
+      const estDu = s.date <= td;
+      let rowCls = estPaye ? 'tr-paye' : (estDu ? 'tr-retard' : '');
+      let statut = estPaye
+        ? `<span class="badge badge-paye">Payé</span>`
+        : estDu
+          ? `<span class="badge badge-retard">Impayé</span>`
+          : `<span class="badge badge-avenir">À venir</span>`;
+      let action = estPaye
+        ? `<button class="btn btn-sm btn-danger" onclick="window._toggle('${c.id}','${s.date}',false)">Annuler</button>`
+        : estDu
+          ? `<button class="btn btn-sm btn-success" onclick="window._toggle('${c.id}','${s.date}',true)">✓ Marquer payé</button>`
+          : '';
+      return `<tr class="${rowCls}"><td class="mono">${s.num}</td><td class="mono" style="font-size:12px">${fmtDate(s.date)}</td><td class="mono">${c.montant.toLocaleString('fr-FR')}</td><td>${statut}</td><td>${action}</td></tr>`;
+    }).join('')}
+    <tr style="background:var(--surface2)">
+      <td colspan="2" style="font-weight:500;text-align:right;padding-right:16px">Total (${c.duree} semaines)</td>
+      <td class="mono" style="color:var(--accent);font-weight:500">${(c.duree*c.montant).toLocaleString('fr-FR')}</td>
+      <td colspan="2"></td>
+    </tr></tbody>
+  </table></div>`;
+}
+
+window._toggle = togglePaiement;
+
+function renderAlertes() {
+  const el = document.getElementById('alertes-container');
+  const items = [];
+  contrats.forEach(c => {
+    if (getStatut(c) === 'termine') return;
+    const n = countRetard(c);
+    if (n >= 3) items.push({ level: 'danger', msg: `<strong>${c.nom}</strong> (${c.immat}) — ${n} semaines impayées. Reprise de moto applicable.` });
+    else if (n === 2) items.push({ level: 'warning', msg: `<strong>${c.nom}</strong> (${c.immat}) — 2 semaines de retard. Relance recommandée.` });
+    else if (n === 1) items.push({ level: 'warning', msg: `<strong>${c.nom}</strong> (${c.immat}) — 1 semaine de retard.` });
+  });
+  if (items.length === 0) {
+    el.innerHTML = `<div class="alert alert-success"><span class="alert-icon">✓</span> Tous les paiements sont à jour — aucune alerte en cours.</div>`;
+  } else {
+    el.innerHTML = items.map(a => `<div class="alert alert-${a.level}"><span class="alert-icon">${a.level==='danger'?'⚠':'!'}</span><div>${a.msg}</div></div>`).join('');
+  }
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+
+window.showSection = function(sec, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('section-' + sec).classList.add('active');
+  if (el) el.classList.add('active');
+  const titles = { dashboard:'Tableau de bord', contrats:'Contrats', paiements:'Paiements', alertes:'Alertes' };
+  document.getElementById('page-title').textContent = titles[sec] || sec;
+  closeSidebar();
+};
+
+window.goToEcheancier = function(id) {
+  showSection('paiements', document.querySelectorAll('.nav-item')[2]);
+  document.getElementById('sel-contrat').value = id;
+  renderEcheancier(id);
+};
+
+window.loadEcheancier = function() {
+  renderEcheancier(document.getElementById('sel-contrat').value);
+};
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+
+window.openModal = function() {
+  editId = null;
+  document.getElementById('modal-title').textContent = 'Nouveau contrat';
+  ['f-nom','f-tel','f-moto','f-immat','f-chassis'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-montant').value = 30000;
+  document.getElementById('f-debut').value = today();
+  document.getElementById('f-duree').value = 130;
+  document.getElementById('form-err').textContent = '';
+  document.getElementById('modal-backdrop').classList.add('open');
+};
+
+window.closeModal = function() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+};
+
+window.saveContrat = saveContratFn;
+
+window.editContrat = function(id) {
+  editId = id;
+  const c = contrats.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('modal-title').textContent = 'Modifier le contrat';
+  document.getElementById('f-nom').value = c.nom;
+  document.getElementById('f-tel').value = c.tel || '';
+  document.getElementById('f-moto').value = c.moto;
+  document.getElementById('f-immat').value = c.immat;
+  document.getElementById('f-chassis').value = c.chassis || '';
+  document.getElementById('f-montant').value = c.montant;
+  document.getElementById('f-debut').value = c.debut;
+  document.getElementById('f-duree').value = c.duree;
+  document.getElementById('form-err').textContent = '';
+  document.getElementById('modal-backdrop').classList.add('open');
+};
+
+window.deleteFn = deleteFn;
+
+// ── Sidebar mobile ─────────────────────────────────────────────────────────
+
+window.toggleSidebar = function() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+};
+window.closeSidebar = function() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+};
+</script>
+</body>
+</html>
