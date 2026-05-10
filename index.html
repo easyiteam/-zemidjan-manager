@@ -46,6 +46,7 @@ a{color:var(--accent);text-decoration:none}
 /* Buttons */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--radius);border:1px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;font-size:13px;font-family:'IBM Plex Sans',sans-serif;transition:all .15s}
 .btn:hover{background:var(--surface2);border-color:var(--border2)}
+.btn:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
 .btn-primary{background:var(--accent);color:#0f0f0f;border-color:var(--accent);font-weight:500}
 .btn-primary:hover{background:var(--accent2)}
 .btn-danger{color:var(--danger);border-color:rgba(224,92,92,0.3)}
@@ -108,6 +109,7 @@ tr:hover td{background:var(--surface2)}
 .form-group input:focus,.form-group select:focus{border-color:var(--accent)}
 .form-group select option{background:var(--surface2)}
 .form-err{color:var(--danger);font-size:12px;margin-bottom:8px}
+.form-warn{color:var(--warning);font-size:12px;margin-bottom:8px;padding:8px 10px;background:rgba(224,154,60,0.08);border-left:3px solid var(--warning);border-radius:var(--radius)}
 .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:1rem}
 
 /* Alerts */
@@ -168,8 +170,6 @@ tr:hover td{background:var(--surface2)}
 </style>
 </head>
 <body>
-
-<!-- Config intégrée -->
 
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
@@ -283,21 +283,33 @@ tr:hover td{background:var(--surface2)}
         <input id="f-duree" type="number" value="130"/>
       </div>
     </div>
+    <div class="form-warn" id="form-warn" style="display:none"></div>
     <div class="form-err" id="form-err"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Annuler</button>
-      <button class="btn btn-primary" onclick="saveContrat()">Enregistrer</button>
+      <button class="btn btn-primary" id="btn-save" onclick="saveContrat()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal confirmation suppression -->
+<div class="modal-backdrop" id="delete-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title" style="color:var(--danger)">Confirmer la suppression</div>
+    <p id="delete-modal-msg" style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:1rem"></p>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeDeleteModal()">Annuler</button>
+      <button class="btn btn-danger" id="btn-confirm-delete" onclick="confirmDeleteFn()" style="background:rgba(224,92,92,0.15)">Supprimer définitivement</button>
     </div>
   </div>
 </div>
 
 <!-- Firebase SDKs -->
 <script type="module">
-// Expose globals immediately so onclick handlers work before module fully loads
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, getDocs, setDoc, deleteDoc, updateDoc, onSnapshot, getDoc
+  getFirestore, collection, doc, addDoc, setDoc, deleteDoc, updateDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ── Firebase init ──────────────────────────────────────────────────────────
@@ -306,15 +318,97 @@ let db = null;
 let unsubscribe = null;
 let contrats = [];
 let editId = null;
+let deleteTargetId = null;
+let warnedDebutChange = false;
 
 const MOIS = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc'];
 
+// ── XSS protection ────────────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── Date helpers ──────────────────────────────────────────────────────────
+
 function today() { return new Date().toISOString().split('T')[0]; }
+
 function fmtDate(str) {
   if (!str) return '—';
   const d = new Date(str + 'T00:00:00');
   return `${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`;
 }
+
+function addWeeks(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n * 7);
+  return d.toISOString().split('T')[0];
+}
+
+// ── Business logic ─────────────────────────────────────────────────────────
+
+function getSemaines(c) {
+  const list = [];
+  for (let i = 0; i < c.duree; i++) {
+    list.push({ num: i + 1, date: addWeeks(c.debut, i) });
+  }
+  return list;
+}
+
+function getStatut(c) {
+  const td = today();
+  const fin = addWeeks(c.debut, c.duree);
+  if (td > fin) return 'termine';
+  const dues = getSemaines(c).filter(s => s.date <= td);
+  return dues.some(s => !(c.paiements || {})[s.date]) ? 'retard' : 'actif';
+}
+
+function countRetard(c) {
+  const td = today();
+  return getSemaines(c).filter(s => s.date <= td && !(c.paiements || {})[s.date]).length;
+}
+
+function totalPaye(c) {
+  return Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length * c.montant;
+}
+
+function pct(c) {
+  const paye = Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length;
+  return Math.round((paye / c.duree) * 100);
+}
+
+function initials(nom) {
+  return nom.split(' ').slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+}
+
+function badgeHtml(st, n) {
+  if (st === 'actif') return `<span class="badge badge-actif">Actif</span>`;
+  if (st === 'retard') return `<span class="badge badge-retard">Retard${n > 0 ? ' (' + n + ')' : ''}</span>`;
+  return `<span class="badge badge-termine">Terminé</span>`;
+}
+
+// Compute all derived fields once per refresh cycle
+function enrichContrats() {
+  return contrats.map(c => {
+    const st = getStatut(c);
+    const ret = countRetard(c);
+    return {
+      ...c,
+      _st: st,
+      _ret: ret,
+      _paye: totalPaye(c),
+      _pct: pct(c),
+      _fin: addWeeks(c.debut, c.duree),
+    };
+  });
+}
+
+// ── Firebase init ──────────────────────────────────────────────────────────
 
 const firebaseConfig = {
   apiKey: "AIzaSyBTVog7cZQUurRkyYv6SwIEQ4cYZh5dARA",
@@ -329,48 +423,6 @@ const app = initializeApp(firebaseConfig);
 db = getFirestore(app);
 startApp();
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-
-function addWeeks(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n * 7);
-  return d.toISOString().split('T')[0];
-}
-function getSemaines(c) {
-  const list = [];
-  for (let i = 0; i < c.duree; i++) {
-    list.push({ num: i+1, date: addWeeks(c.debut, i) });
-  }
-  return list;
-}
-function getStatut(c) {
-  const td = today();
-  const fin = addWeeks(c.debut, c.duree);
-  if (td > fin) return 'termine';
-  const dues = getSemaines(c).filter(s => s.date <= td);
-  return dues.some(s => !(c.paiements || {})[s.date]) ? 'retard' : 'actif';
-}
-function countRetard(c) {
-  const td = today();
-  return getSemaines(c).filter(s => s.date <= td && !(c.paiements || {})[s.date]).length;
-}
-function totalPaye(c) {
-  return Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length * c.montant;
-}
-function pct(c) {
-  const paye = Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length;
-  return Math.round((paye / c.duree) * 100);
-}
-function initials(nom) {
-  return nom.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
-}
-function badgeHtml(st, n) {
-  if (st==='actif') return `<span class="badge badge-actif">Actif</span>`;
-  if (st==='retard') return `<span class="badge badge-retard">Retard ${n>0?'('+n+')':''}</span>`;
-  return `<span class="badge badge-termine">Terminé</span>`;
-}
-
 // ── Firestore ──────────────────────────────────────────────────────────────
 
 function startApp() {
@@ -378,41 +430,80 @@ function startApp() {
   unsubscribe = onSnapshot(collection(db, 'contrats'), (snap) => {
     contrats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     refreshAll();
-    document.getElementById('sync-status').textContent = '● En ligne — ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+    document.getElementById('sync-status').textContent =
+      '● En ligne — ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   }, () => {
     document.getElementById('sync-status').textContent = '○ Hors ligne';
   });
 
-  const td = today();
-  document.getElementById('page-sub').textContent = fmtDate(td);
+  document.getElementById('page-sub').textContent = fmtDate(today());
   populateSelect();
+
+  // Event delegation for payment toggle (avoids window._toggle pattern)
+  document.getElementById('ech-container').addEventListener('click', e => {
+    const btn = e.target.closest('[data-toggle-id]');
+    if (btn) {
+      const paye = btn.dataset.togglePaye === 'true';
+      togglePaiement(btn.dataset.toggleId, btn.dataset.toggleDate, paye);
+    }
+  });
 }
 
 async function saveContratFn() {
-  const nom = document.getElementById('f-nom').value.trim();
-  const tel = document.getElementById('f-tel').value.trim();
-  const moto = document.getElementById('f-moto').value.trim();
-  const immat = document.getElementById('f-immat').value.trim();
-  const chassis = document.getElementById('f-chassis').value.trim();
-  const montant = parseInt(document.getElementById('f-montant').value) || 0;
-  const debut = document.getElementById('f-debut').value;
-  const duree = parseInt(document.getElementById('f-duree').value) || 0;
-  const errEl = document.getElementById('form-err');
+  const nom    = document.getElementById('f-nom').value.trim();
+  const tel    = document.getElementById('f-tel').value.trim();
+  const moto   = document.getElementById('f-moto').value.trim();
+  const immat  = document.getElementById('f-immat').value.trim();
+  const chassis= document.getElementById('f-chassis').value.trim();
+  const montant= parseInt(document.getElementById('f-montant').value) || 0;
+  const debut  = document.getElementById('f-debut').value;
+  const duree  = parseInt(document.getElementById('f-duree').value) || 0;
+
+  const errEl  = document.getElementById('form-err');
+  const warnEl = document.getElementById('form-warn');
   errEl.textContent = '';
+
   if (!nom || !moto || !immat || !debut || !montant || !duree) {
     errEl.textContent = 'Veuillez remplir les champs obligatoires (*).';
     return;
   }
-  const data = { nom, tel, moto, immat, chassis, montant, debut, duree,
-    paiements: editId ? (contrats.find(c=>c.id===editId)?.paiements||{}) : {} };
-  const id = editId || Date.now().toString();
-  await setDoc(doc(db, 'contrats', id), data);
-  closeModal();
-}
 
-async function deleteFn(id) {
-  if (!confirm('Supprimer ce contrat définitivement ?')) return;
-  await deleteDoc(doc(db, 'contrats', id));
+  // Warn if debut changed on a contract that already has payments
+  if (editId) {
+    const c = contrats.find(x => x.id === editId);
+    const originalDebut = document.getElementById('f-debut').dataset.originalDebut;
+    if (c && debut !== originalDebut && Object.keys(c.paiements || {}).length > 0) {
+      if (!warnedDebutChange) {
+        warnEl.style.display = 'block';
+        warnEl.textContent = '⚠ La date de début a changé alors que des paiements existent. Les versements enregistrés ne correspondront plus aux nouvelles semaines. Cliquez à nouveau sur "Enregistrer" pour confirmer.';
+        warnedDebutChange = true;
+        return;
+      }
+    }
+  }
+  warnedDebutChange = false;
+  warnEl.style.display = 'none';
+
+  const saveBtn = document.getElementById('btn-save');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Enregistrement...';
+
+  try {
+    const data = { nom, tel, moto, immat, chassis, montant, debut, duree,
+      paiements: editId ? (contrats.find(c => c.id === editId)?.paiements || {}) : {} };
+
+    if (editId) {
+      await setDoc(doc(db, 'contrats', editId), data);
+    } else {
+      await addDoc(collection(db, 'contrats'), data);
+    }
+    closeModal();
+  } catch (e) {
+    errEl.textContent = 'Erreur de sauvegarde. Vérifiez votre connexion et réessayez.';
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Enregistrer';
+  }
 }
 
 async function togglePaiement(id, date, paye) {
@@ -421,94 +512,90 @@ async function togglePaiement(id, date, paye) {
   const paiements = { ...(c.paiements || {}) };
   if (paye) paiements[date] = true;
   else delete paiements[date];
-  await updateDoc(doc(db, 'contrats', id), { paiements });
+  try {
+    await updateDoc(doc(db, 'contrats', id), { paiements });
+  } catch (e) {
+    alert('Erreur lors de la mise à jour du paiement. Réessayez.');
+  }
 }
 
 // ── Render ─────────────────────────────────────────────────────────────────
 
 function refreshAll() {
-  renderStats();
-  renderDashboard();
-  renderContratsTable();
-  renderAlertes();
+  const ec = enrichContrats();
+  renderStats(ec);
+  renderDashboard(ec);
+  renderContratsTable(ec);
+  renderAlertes(ec);
   populateSelect();
   const selId = document.getElementById('sel-contrat').value;
   if (selId) renderEcheancier(selId);
 }
 
-function renderStats() {
-  const actifs = contrats.filter(c => getStatut(c) === 'actif').length;
-  const retards = contrats.filter(c => getStatut(c) === 'retard').length;
-  const totalP = contrats.reduce((s,c) => s + totalPaye(c), 0);
-  document.getElementById('s-total').textContent = contrats.length;
+function renderStats(ec) {
+  const actifs  = ec.filter(c => c._st === 'actif').length;
+  const retards = ec.filter(c => c._st === 'retard').length;
+  const totalP  = ec.reduce((s, c) => s + c._paye, 0);
+  document.getElementById('s-total').textContent = ec.length;
   document.getElementById('s-actif').textContent = actifs;
   document.getElementById('s-retard').textContent = retards;
   document.getElementById('s-total-paye').textContent = totalP.toLocaleString('fr-FR');
   const badge = document.getElementById('alert-badge');
-  if (retards > 0) { badge.style.display='inline'; badge.textContent=retards; }
-  else badge.style.display='none';
+  if (retards > 0) { badge.style.display = 'inline'; badge.textContent = retards; }
+  else badge.style.display = 'none';
 }
 
-function renderDashboard() {
+function renderDashboard(ec) {
   const el = document.getElementById('dash-list');
-  const actifs = contrats.filter(c => getStatut(c) !== 'termine');
+  const actifs = ec.filter(c => c._st !== 'termine');
   if (actifs.length === 0) {
     el.innerHTML = '<div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Aucun contrat actif</div></div>';
     return;
   }
-  el.innerHTML = actifs.map(c => {
-    const st = getStatut(c);
-    const p = pct(c);
-    const ret = countRetard(c);
-    return `<div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap" class="contract-row">
-      <div class="avatar">${initials(c.nom)}</div>
+  el.innerHTML = actifs.map(c => `
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">
+      <div class="avatar">${esc(initials(c.nom))}</div>
       <div style="flex:1;min-width:140px">
-        <div style="font-weight:500;margin-bottom:2px">${c.nom}</div>
-        <div style="color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace">${c.moto} · ${c.immat}</div>
-        <div class="progress" style="margin-top:8px;max-width:220px"><div class="progress-fill" style="width:${p}%"></div></div>
-        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'IBM Plex Mono',monospace">${p}% · ${totalPaye(c).toLocaleString('fr-FR')} FCFA perçus</div>
+        <div style="font-weight:500;margin-bottom:2px">${esc(c.nom)}</div>
+        <div style="color:var(--muted);font-size:12px;font-family:'IBM Plex Mono',monospace">${esc(c.moto)} · ${esc(c.immat)}</div>
+        <div class="progress" style="margin-top:8px;max-width:220px"><div class="progress-fill" style="width:${c._pct}%"></div></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;font-family:'IBM Plex Mono',monospace">${c._pct}% · ${c._paye.toLocaleString('fr-FR')} FCFA perçus</div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
-        ${badgeHtml(st, ret)}
-        <button class="btn btn-sm" onclick="goToEcheancier('${c.id}')">Échéancier →</button>
+        ${badgeHtml(c._st, c._ret)}
+        <button class="btn btn-sm" onclick="goToEcheancier('${esc(c.id)}')">Échéancier →</button>
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 
-function renderContratsTable() {
+function renderContratsTable(ec) {
   const tbody = document.getElementById('tbody-contrats');
-  if (contrats.length === 0) {
+  if (ec.length === 0) {
     tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">◻</div><div class="empty-text">Aucun contrat</div></div></td></tr>';
     return;
   }
-  tbody.innerHTML = contrats.map(c => {
-    const st = getStatut(c);
-    const p = pct(c);
-    const fin = addWeeks(c.debut, c.duree);
-    return `<tr>
-      <td><div style="font-weight:500">${c.nom}</div><div style="color:var(--muted);font-size:12px">${c.tel||''}</div></td>
-      <td><span class="mono">${c.moto}</span><br/><span style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${c.immat}</span></td>
-      <td class="mono" style="font-size:12px">${fmtDate(c.debut)}<br/><span style="color:var(--muted)">→ ${fmtDate(fin)}</span></td>
-      <td class="mono">${(c.montant||0).toLocaleString('fr-FR')}</td>
-      <td style="min-width:120px">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-family:'IBM Plex Mono',monospace">${p}%</div>
-        <div class="progress"><div class="progress-fill" style="width:${p}%"></div></div>
-      </td>
-      <td>${badgeHtml(st, countRetard(c))}</td>
-      <td><div style="display:flex;gap:6px">
-        <button class="btn btn-sm" onclick="editContrat('${c.id}')">Modifier</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteFn('${c.id}')">✕</button>
-      </div></td>
-    </tr>`;
-  }).join('');
+  tbody.innerHTML = ec.map(c => `<tr>
+    <td><div style="font-weight:500">${esc(c.nom)}</div><div style="color:var(--muted);font-size:12px">${esc(c.tel || '')}</div></td>
+    <td><span class="mono">${esc(c.moto)}</span><br/><span style="font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace">${esc(c.immat)}</span></td>
+    <td class="mono" style="font-size:12px">${fmtDate(c.debut)}<br/><span style="color:var(--muted)">→ ${fmtDate(c._fin)}</span></td>
+    <td class="mono">${(c.montant || 0).toLocaleString('fr-FR')}</td>
+    <td style="min-width:120px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px;font-family:'IBM Plex Mono',monospace">${c._pct}%</div>
+      <div class="progress"><div class="progress-fill" style="width:${c._pct}%"></div></div>
+    </td>
+    <td>${badgeHtml(c._st, c._ret)}</td>
+    <td><div style="display:flex;gap:6px">
+      <button class="btn btn-sm" onclick="editContrat('${esc(c.id)}')">Modifier</button>
+      <button class="btn btn-sm btn-danger" onclick="openDeleteModal('${esc(c.id)}','${esc(c.nom)}')">✕</button>
+    </div></td>
+  </tr>`).join('');
 }
 
 function populateSelect() {
   const sel = document.getElementById('sel-contrat');
   const cur = sel.value;
   sel.innerHTML = '<option value="">— Sélectionner un contrat —</option>' +
-    contrats.map(c => `<option value="${c.id}" ${c.id===cur?'selected':''}>${c.nom} (${c.immat})</option>`).join('');
+    contrats.map(c => `<option value="${esc(c.id)}" ${c.id === cur ? 'selected' : ''}>${esc(c.nom)} (${esc(c.immat)})</option>`).join('');
 }
 
 function renderEcheancier(id) {
@@ -519,52 +606,51 @@ function renderEcheancier(id) {
   if (!c) return;
   const td = today();
   const semaines = getSemaines(c);
-  const payeCount = semaines.filter(s => (c.paiements||{})[s.date]).length;
+  const payeCount = semaines.filter(s => (c.paiements || {})[s.date]).length;
   const retardCount = countRetard(c);
-  sumEl.textContent = `${payeCount}/${c.duree} sem. payées · retard: ${retardCount} · total: ${(c.duree*c.montant).toLocaleString('fr-FR')} FCFA`;
+  sumEl.textContent = `${payeCount}/${c.duree} sem. payées · retard: ${retardCount} · total: ${(c.duree * c.montant).toLocaleString('fr-FR')} FCFA`;
 
   container.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>N°</th><th>Date</th><th>Montant</th><th>Statut</th><th>Action</th></tr></thead>
     <tbody>${semaines.map(s => {
-      const estPaye = !!(c.paiements||{})[s.date];
+      const estPaye = !!(c.paiements || {})[s.date];
       const estDu = s.date <= td;
-      let rowCls = estPaye ? 'tr-paye' : (estDu ? 'tr-retard' : '');
-      let statut = estPaye
+      const rowCls = estPaye ? 'tr-paye' : (estDu ? 'tr-retard' : '');
+      const statut = estPaye
         ? `<span class="badge badge-paye">Payé</span>`
         : estDu
           ? `<span class="badge badge-retard">Impayé</span>`
           : `<span class="badge badge-avenir">À venir</span>`;
-      let action = estPaye
-        ? `<button class="btn btn-sm btn-danger" onclick="window._toggle('${c.id}','${s.date}',false)">Annuler</button>`
+      // Use data attributes — handled by event delegation in startApp()
+      const action = estPaye
+        ? `<button class="btn btn-sm btn-danger" data-toggle-id="${esc(c.id)}" data-toggle-date="${esc(s.date)}" data-toggle-paye="false">Annuler</button>`
         : estDu
-          ? `<button class="btn btn-sm btn-success" onclick="window._toggle('${c.id}','${s.date}',true)">✓ Marquer payé</button>`
+          ? `<button class="btn btn-sm btn-success" data-toggle-id="${esc(c.id)}" data-toggle-date="${esc(s.date)}" data-toggle-paye="true">✓ Marquer payé</button>`
           : '';
       return `<tr class="${rowCls}"><td class="mono">${s.num}</td><td class="mono" style="font-size:12px">${fmtDate(s.date)}</td><td class="mono">${c.montant.toLocaleString('fr-FR')}</td><td>${statut}</td><td>${action}</td></tr>`;
     }).join('')}
     <tr style="background:var(--surface2)">
       <td colspan="2" style="font-weight:500;text-align:right;padding-right:16px">Total (${c.duree} semaines)</td>
-      <td class="mono" style="color:var(--accent);font-weight:500">${(c.duree*c.montant).toLocaleString('fr-FR')}</td>
+      <td class="mono" style="color:var(--accent);font-weight:500">${(c.duree * c.montant).toLocaleString('fr-FR')}</td>
       <td colspan="2"></td>
     </tr></tbody>
   </table></div>`;
 }
 
-window._toggle = togglePaiement;
-
-function renderAlertes() {
+function renderAlertes(ec) {
   const el = document.getElementById('alertes-container');
   const items = [];
-  contrats.forEach(c => {
-    if (getStatut(c) === 'termine') return;
-    const n = countRetard(c);
-    if (n >= 3) items.push({ level: 'danger', msg: `<strong>${c.nom}</strong> (${c.immat}) — ${n} semaines impayées. Reprise de moto applicable.` });
-    else if (n === 2) items.push({ level: 'warning', msg: `<strong>${c.nom}</strong> (${c.immat}) — 2 semaines de retard. Relance recommandée.` });
-    else if (n === 1) items.push({ level: 'warning', msg: `<strong>${c.nom}</strong> (${c.immat}) — 1 semaine de retard.` });
+  ec.forEach(c => {
+    if (c._st === 'termine') return;
+    const n = c._ret;
+    if (n >= 3) items.push({ level: 'danger', msg: `<strong>${esc(c.nom)}</strong> (${esc(c.immat)}) — ${n} semaines impayées. Reprise de moto applicable.` });
+    else if (n === 2) items.push({ level: 'warning', msg: `<strong>${esc(c.nom)}</strong> (${esc(c.immat)}) — 2 semaines de retard. Relance recommandée.` });
+    else if (n === 1) items.push({ level: 'warning', msg: `<strong>${esc(c.nom)}</strong> (${esc(c.immat)}) — 1 semaine de retard.` });
   });
   if (items.length === 0) {
     el.innerHTML = `<div class="alert alert-success"><span class="alert-icon">✓</span> Tous les paiements sont à jour — aucune alerte en cours.</div>`;
   } else {
-    el.innerHTML = items.map(a => `<div class="alert alert-${a.level}"><span class="alert-icon">${a.level==='danger'?'⚠':'!'}</span><div>${a.msg}</div></div>`).join('');
+    el.innerHTML = items.map(a => `<div class="alert alert-${a.level}"><span class="alert-icon">${a.level === 'danger' ? '⚠' : '!'}</span><div>${a.msg}</div></div>`).join('');
   }
 }
 
@@ -575,7 +661,7 @@ window.showSection = function(sec, el) {
   document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('section-' + sec).classList.add('active');
   if (el) el.classList.add('active');
-  const titles = { dashboard:'Tableau de bord', contrats:'Contrats', paiements:'Paiements', alertes:'Alertes' };
+  const titles = { dashboard: 'Tableau de bord', contrats: 'Contrats', paiements: 'Paiements', alertes: 'Alertes' };
   document.getElementById('page-title').textContent = titles[sec] || sec;
   window.closeSidebar();
 };
@@ -590,27 +676,34 @@ window.loadEcheancier = function() {
   renderEcheancier(document.getElementById('sel-contrat').value);
 };
 
-// ── Modal ──────────────────────────────────────────────────────────────────
+// ── Modal contrat ──────────────────────────────────────────────────────────
 
 window.openModal = function() {
   editId = null;
+  warnedDebutChange = false;
   document.getElementById('modal-title').textContent = 'Nouveau contrat';
-  ['f-nom','f-tel','f-moto','f-immat','f-chassis'].forEach(id => document.getElementById(id).value = '');
+  ['f-nom', 'f-tel', 'f-moto', 'f-immat', 'f-chassis'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-montant').value = 30000;
-  document.getElementById('f-debut').value = today();
+  const debutInput = document.getElementById('f-debut');
+  debutInput.value = today();
+  debutInput.dataset.originalDebut = '';
   document.getElementById('f-duree').value = 130;
   document.getElementById('form-err').textContent = '';
+  document.getElementById('form-warn').style.display = 'none';
   document.getElementById('modal-backdrop').classList.add('open');
 };
 
 window.closeModal = function() {
   document.getElementById('modal-backdrop').classList.remove('open');
+  warnedDebutChange = false;
+  document.getElementById('form-warn').style.display = 'none';
 };
 
 window.saveContrat = saveContratFn;
 
 window.editContrat = function(id) {
   editId = id;
+  warnedDebutChange = false;
   const c = contrats.find(x => x.id === id);
   if (!c) return;
   document.getElementById('modal-title').textContent = 'Modifier le contrat';
@@ -620,13 +713,44 @@ window.editContrat = function(id) {
   document.getElementById('f-immat').value = c.immat;
   document.getElementById('f-chassis').value = c.chassis || '';
   document.getElementById('f-montant').value = c.montant;
-  document.getElementById('f-debut').value = c.debut;
+  const debutInput = document.getElementById('f-debut');
+  debutInput.value = c.debut;
+  debutInput.dataset.originalDebut = c.debut;
   document.getElementById('f-duree').value = c.duree;
   document.getElementById('form-err').textContent = '';
+  document.getElementById('form-warn').style.display = 'none';
   document.getElementById('modal-backdrop').classList.add('open');
 };
 
-window.deleteFn = deleteFn;
+// ── Modal suppression ──────────────────────────────────────────────────────
+
+window.openDeleteModal = function(id, nom) {
+  deleteTargetId = id;
+  document.getElementById('delete-modal-msg').textContent =
+    `Supprimer le contrat de "${nom}" ? Cette action est irréversible et effacera tous les paiements associés.`;
+  document.getElementById('delete-modal').classList.add('open');
+};
+
+window.closeDeleteModal = function() {
+  document.getElementById('delete-modal').classList.remove('open');
+  deleteTargetId = null;
+};
+
+window.confirmDeleteFn = async function() {
+  if (!deleteTargetId) return;
+  const btn = document.getElementById('btn-confirm-delete');
+  btn.disabled = true;
+  btn.textContent = 'Suppression...';
+  try {
+    await deleteDoc(doc(db, 'contrats', deleteTargetId));
+    closeDeleteModal();
+  } catch (e) {
+    alert('Erreur lors de la suppression. Réessayez.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Supprimer définitivement';
+  }
+};
 
 // ── Sidebar mobile ─────────────────────────────────────────────────────────
 
