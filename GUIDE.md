@@ -29,7 +29,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /contrats/{document=**} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
   }
 }
@@ -37,15 +37,23 @@ service cloud.firestore {
 
    Clique **Publier**
 
-   > ⚠️ Ces règles permettent un accès libre. Pour sécuriser plus tard,
-   > ajoute une authentification Firebase.
+   Ces règles n'autorisent l'accès qu'aux utilisateurs connectés (voir
+   étape 5 ci-dessous) — sans compte, impossible de lire ou modifier les
+   contrats, même en connaissant l'URL du site.
 
-5. Dans le menu gauche → icône **</>** (Web)
+5. Dans le menu gauche → **Authentication** → **Sign-in method**
+   - Active le fournisseur **Email/Password**
+   - Onglet **Users** → **Add user** → renseigne ton email et un mot de
+     passe. C'est ce compte que tu utiliseras pour te connecter à l'appli.
+   - Répète l'opération pour chaque personne qui doit avoir accès (un
+     gérant, par exemple).
+
+6. Dans le menu gauche → icône **</>** (Web)
    - Nom de l'app : `zemidjan-web`
    - Ne coche PAS Firebase Hosting
    - Clique **Enregistrer l'app**
    - **Copie l'objet `firebaseConfig`** qui s'affiche — tu en auras besoin
-     au premier lancement de l'appli. Il ressemble à ceci :
+     à l'étape suivante. Il ressemble à ceci :
 
 ```json
 {
@@ -57,6 +65,10 @@ service cloud.firestore {
   "appId": "1:123456789:web:abcdef"
 }
 ```
+
+   Colle cet objet dans `index.html`, à la place du bloc `firebaseConfig`
+   existant (recherche `const firebaseConfig = {`), avant de déposer le
+   fichier sur GitHub à l'étape suivante.
 
 ---
 
@@ -106,15 +118,13 @@ https://TON-COMPTE.github.io/zemidjan-manager/
 ## ÉTAPE 4 — Premier lancement
 
 1. Ouvre l'URL GitHub Pages
-2. Un écran de configuration apparaît
-3. Colle l'objet `firebaseConfig` copié à l'étape 1
-4. Clique **"Démarrer l'application"**
+2. Un écran de connexion apparaît
+3. Connecte-toi avec l'email et le mot de passe créés à l'ÉTAPE 1,
+   point 5 (Authentication → Users)
 
-La configuration est sauvegardée dans le navigateur —
-tu n'auras plus à la ressaisir sur cet appareil.
-
-Sur un nouveau téléphone ou un autre appareil, colle
-à nouveau le même `firebaseConfig`.
+Cette connexion est propre à chaque appareil/navigateur : sur un nouveau
+téléphone ou un autre navigateur, reconnecte-toi avec les mêmes
+identifiants.
 
 ---
 

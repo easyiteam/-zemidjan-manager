@@ -164,6 +164,13 @@ tr:hover td{background:var(--surface2)}
 
 .mono{font-family:'Fira Code',monospace}
 
+/* Login screen */
+.login-screen{display:flex;position:fixed;inset:0;background:var(--bg);align-items:center;justify-content:center;padding:1rem;z-index:300}
+.login-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:2rem 1.75rem;box-shadow:0 25px 60px rgba(0,0,0,0.6)}
+.login-logo{text-align:center;margin-bottom:1.5rem}
+.login-logo .logo-mark{font-family:'Fira Code',monospace;font-size:22px;font-weight:700;color:var(--accent);letter-spacing:-0.5px}
+.login-logo .logo-sub{font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:1.5px;text-transform:uppercase}
+
 /* Sync status dot */
 #sync-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);font-family:'Fira Code',monospace;letter-spacing:.3px}
 .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--success);flex-shrink:0;animation:pulse-dot 2.5s ease-in-out infinite}
@@ -184,6 +191,27 @@ tr:hover td{background:var(--surface2)}
 </style>
 </head>
 <body>
+
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-mark">ZM//</div>
+      <div class="logo-sub">Zémidjan Manager</div>
+    </div>
+    <div class="form-group form-full">
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <div class="form-group form-full" style="margin-top:12px">
+      <label for="login-password">Mot de passe</label>
+      <input id="login-password" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <div class="form-err" id="login-err" role="alert" style="margin-top:8px"></div>
+    <button class="btn btn-primary" id="btn-login" style="width:100%;justify-content:center;margin-top:8px" onclick="doLogin()">Se connecter</button>
+  </div>
+</div>
+
+<div id="app-root" style="display:none">
 
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
@@ -220,11 +248,14 @@ tr:hover td{background:var(--surface2)}
         <span id="alert-badge" style="display:none;margin-left:auto;background:var(--danger);color:#fff;border-radius:12px;padding:1px 7px;font-size:10px;font-family:'Fira Code',monospace;font-weight:700"></span>
       </div>
     </nav>
-    <div style="padding:1rem 1.25rem;border-top:1px solid var(--border)">
+    <div style="padding:1rem 1.25rem;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px">
       <div id="sync-status">
         <span class="sync-dot" id="sync-dot"></span>
         <span id="sync-text">Connexion...</span>
       </div>
+      <button class="btn btn-sm btn-icon" onclick="doLogout()" aria-label="Se déconnecter" title="Se déconnecter">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
   </aside>
 
@@ -353,12 +384,17 @@ tr:hover td{background:var(--surface2)}
   </div>
 </div>
 
+</div>
+
 <script type="module">
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
   getFirestore, collection, doc, addDoc, setDoc, deleteDoc, updateDoc, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -469,9 +505,49 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 db = getFirestore(app);
-startApp();
+const auth = getAuth(app);
+let appInitialized = false;
 
-function startApp() {
+onAuthStateChanged(auth, user => {
+  if (user) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-root').style.display = '';
+    if (!appInitialized) { appInitialized = true; startApp(); }
+    else subscribeContrats();
+  } else {
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    contrats = [];
+    document.getElementById('app-root').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('login-password').value = '';
+    setTimeout(() => document.getElementById('login-email').focus(), 50);
+  }
+});
+
+window.doLogin = async function() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-err');
+  const btn = document.getElementById('btn-login');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Veuillez renseigner email et mot de passe.'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Connexion...';
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch {
+    errEl.textContent = 'Email ou mot de passe incorrect.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Se connecter';
+  }
+};
+
+window.doLogout = function() {
+  signOut(auth);
+};
+
+function subscribeContrats() {
   if (unsubscribe) unsubscribe();
   unsubscribe = onSnapshot(collection(db, 'contrats'), (snap) => {
     contrats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -483,6 +559,10 @@ function startApp() {
     document.getElementById('sync-dot').className = 'sync-dot offline';
     document.getElementById('sync-text').textContent = 'Hors ligne';
   });
+}
+
+function startApp() {
+  subscribeContrats();
 
   document.getElementById('page-sub').textContent = fmtDate(today());
   populateSelect();
