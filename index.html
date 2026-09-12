@@ -307,6 +307,10 @@ tr:hover td{background:var(--surface2)}
         <select id="sel-contrat" onchange="loadEcheancier()" aria-label="Sélectionner un contrat" style="padding:9px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:'Fira Sans',sans-serif;font-size:13px;outline:none;min-width:240px;cursor:pointer">
           <option value="">— Sélectionner un contrat —</option>
         </select>
+        <button class="btn btn-primary btn-sm" id="btn-open-versement" disabled onclick="openVersementModal(document.getElementById('sel-contrat').value)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Enregistrer un versement
+        </button>
         <div id="ech-summary" style="font-size:12px;color:var(--muted);font-family:'Fira Code',monospace"></div>
       </div>
       <div id="ech-container"></div>
@@ -384,6 +388,27 @@ tr:hover td{background:var(--surface2)}
   </div>
 </div>
 
+<!-- Modal enregistrement d'un versement -->
+<div class="modal-backdrop" id="versement-modal" role="dialog" aria-modal="true" aria-labelledby="versement-modal-title">
+  <div class="modal" style="max-width:420px" onclick="event.stopPropagation()">
+    <div class="modal-title" id="versement-modal-title">Enregistrer un versement</div>
+    <p id="versement-info" style="color:var(--muted);font-size:12px;font-family:'Fira Code',monospace;margin-bottom:1rem"></p>
+    <div class="form-group form-full">
+      <label for="f-versement-montant">Montant reçu (FCFA) *</label>
+      <input id="f-versement-montant" type="number" min="1" onkeydown="if(event.key==='Enter')confirmVersement()"/>
+    </div>
+    <p style="color:var(--muted);font-size:12px;line-height:1.5;margin-top:8px">
+      Si le montant dépasse le versement hebdo, le surplus couvre automatiquement les semaines suivantes.
+      Un reliquat insuffisant pour couvrir une semaine entière est conservé comme avance pour le prochain versement.
+    </p>
+    <div class="form-err" id="versement-err" role="alert" style="margin-top:8px"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeVersementModal()">Annuler</button>
+      <button class="btn btn-primary" id="btn-versement" onclick="confirmVersement()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script type="module">
@@ -403,7 +428,7 @@ let unsubscribe = null;
 let contrats = [];
 let editId = null;
 let deleteTargetId = null;
-let warnedDebutChange = false;
+let warnedScheduleChange = false;
 
 const MOIS = ['jan','fév','mars','avr','mai','juin','juil','août','sep','oct','nov','déc'];
 
@@ -417,7 +442,10 @@ function esc(s) {
 
 // ── Date helpers ───────────────────────────────────────────────────────────
 
-function today() { return new Date().toISOString().split('T')[0]; }
+function toDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function today() { return toDateStr(new Date()); }
 function fmtDate(str) {
   if (!str) return '—';
   const d = new Date(str + 'T00:00:00');
@@ -426,7 +454,7 @@ function fmtDate(str) {
 function addWeeks(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + n * 7);
-  return d.toISOString().split('T')[0];
+  return toDateStr(d);
 }
 
 // ── Count-up animation ─────────────────────────────────────────────────────
@@ -467,7 +495,7 @@ function countRetard(c) {
   return getSemaines(c).filter(s => s.date <= td && !(c.paiements || {})[s.date]).length;
 }
 function totalPaye(c) {
-  return Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length * c.montant;
+  return Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length * c.montant + (c.credit || 0);
 }
 function pct(c) {
   const paye = Object.keys(c.paiements || {}).filter(d => c.paiements[d]).length;
@@ -572,12 +600,14 @@ function startApp() {
     if (e.key === 'Escape') {
       if (document.getElementById('modal-backdrop').classList.contains('open')) window.closeModal();
       if (document.getElementById('delete-modal').classList.contains('open')) window.closeDeleteModal();
+      if (document.getElementById('versement-modal').classList.contains('open')) window.closeVersementModal();
     }
   });
 
   // Click backdrop to close modals
   document.getElementById('modal-backdrop').addEventListener('click', () => window.closeModal());
   document.getElementById('delete-modal').addEventListener('click', () => window.closeDeleteModal());
+  document.getElementById('versement-modal').addEventListener('click', () => window.closeVersementModal());
 
   // Event delegation for payment toggles
   document.getElementById('ech-container').addEventListener('click', e => {
@@ -606,18 +636,23 @@ async function saveContratFn() {
     return;
   }
 
-  // Warn if debut changed on contract that already has payments
+  // Warn if debut/duree changed on a contract that already has payments
   if (editId) {
     const c = contrats.find(x => x.id === editId);
     const originalDebut = document.getElementById('f-debut').dataset.originalDebut;
-    if (c && debut !== originalDebut && Object.keys(c.paiements || {}).length > 0 && !warnedDebutChange) {
+    const originalDuree = document.getElementById('f-duree').dataset.originalDuree;
+    const debutChanged = debut !== originalDebut;
+    const dureeChanged = String(duree) !== String(originalDuree);
+    if (c && (debutChanged || dureeChanged) && Object.keys(c.paiements || {}).length > 0 && !warnedScheduleChange) {
+      const quoi = debutChanged && dureeChanged ? 'La date de début et la durée ont changé'
+        : debutChanged ? 'La date de début a changé' : 'La durée a changé';
       warnEl.style.display = 'block';
-      warnEl.textContent = '⚠ La date de début a changé alors que des paiements existent. Les versements enregistrés ne correspondront plus aux nouvelles semaines. Cliquez à nouveau sur "Enregistrer" pour confirmer.';
-      warnedDebutChange = true;
+      warnEl.textContent = `⚠ ${quoi} alors que des paiements existent. Les versements enregistrés ne correspondront plus aux nouvelles semaines. Cliquez à nouveau sur "Enregistrer" pour confirmer.`;
+      warnedScheduleChange = true;
       return;
     }
   }
-  warnedDebutChange = false;
+  warnedScheduleChange = false;
   warnEl.style.display = 'none';
 
   const saveBtn = document.getElementById('btn-save');
@@ -625,8 +660,10 @@ async function saveContratFn() {
   saveBtn.textContent = 'Enregistrement...';
 
   try {
+    const existing = editId ? contrats.find(c => c.id === editId) : null;
     const data = { nom, tel, moto, immat, chassis, montant, debut, duree,
-      paiements: editId ? (contrats.find(c => c.id === editId)?.paiements || {}) : {} };
+      paiements: existing?.paiements || {},
+      credit: existing?.credit || 0 };
     if (editId) {
       await setDoc(doc(db, 'contrats', editId), data);
     } else {
@@ -641,9 +678,27 @@ async function saveContratFn() {
   }
 }
 
+async function enregistrerVersementFn(id, montant) {
+  const c = contrats.find(x => x.id === id);
+  if (!c) return 0;
+  let solde = montant + (c.credit || 0);
+  const paiements = { ...(c.paiements || {}) };
+  let nbSemaines = 0;
+  for (const s of getSemaines(c)) {
+    if (paiements[s.date]) continue;
+    if (solde < c.montant) break;
+    paiements[s.date] = true;
+    solde -= c.montant;
+    nbSemaines++;
+  }
+  await updateDoc(doc(db, 'contrats', id), { paiements, credit: solde });
+  return nbSemaines;
+}
+
 async function togglePaiement(id, date, paye) {
   const c = contrats.find(x => x.id === id);
   if (!c) return;
+  if (!paye && !confirm(`Annuler le paiement du ${fmtDate(date)} pour ${c.nom} ?`)) return;
   const paiements = { ...(c.paiements || {}) };
   if (paye) paiements[date] = true;
   else delete paiements[date];
@@ -753,14 +808,19 @@ function populateSelect() {
 function renderEcheancier(id) {
   const container = document.getElementById('ech-container');
   const sumEl = document.getElementById('ech-summary');
-  if (!id) { container.innerHTML = ''; sumEl.textContent = ''; return; }
+  const btnVersement = document.getElementById('btn-open-versement');
+  if (!id) { container.innerHTML = ''; sumEl.textContent = ''; btnVersement.disabled = true; return; }
   const c = contrats.find(x => x.id === id);
   if (!c) return;
   const td = today();
   const semaines = getSemaines(c);
   const payeCount = semaines.filter(s => (c.paiements||{})[s.date]).length;
   const retardCount = countRetard(c);
-  sumEl.textContent = `${payeCount}/${c.duree} sem. payées · retard: ${retardCount} · total: ${(c.duree*c.montant).toLocaleString('fr-FR')} FCFA`;
+  const credit = c.credit || 0;
+  btnVersement.disabled = payeCount >= c.duree;
+  sumEl.textContent = `${payeCount}/${c.duree} sem. payées · retard: ${retardCount}` +
+    (credit > 0 ? ` · avance: ${credit.toLocaleString('fr-FR')} FCFA` : '') +
+    ` · total: ${(c.duree*c.montant).toLocaleString('fr-FR')} FCFA`;
 
   container.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>N°</th><th>Date</th><th>Montant (FCFA)</th><th>Statut</th><th>Action</th></tr></thead>
@@ -838,14 +898,16 @@ window.loadEcheancier = function() {
 
 window.openModal = function() {
   editId = null;
-  warnedDebutChange = false;
+  warnedScheduleChange = false;
   document.getElementById('modal-title').textContent = 'Nouveau contrat';
   ['f-nom','f-tel','f-moto','f-immat','f-chassis'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-montant').value = 30000;
   const debutInput = document.getElementById('f-debut');
   debutInput.value = today();
   debutInput.dataset.originalDebut = '';
-  document.getElementById('f-duree').value = 130;
+  const dureeInput = document.getElementById('f-duree');
+  dureeInput.value = 130;
+  dureeInput.dataset.originalDuree = '';
   document.getElementById('form-err').textContent = '';
   document.getElementById('form-warn').style.display = 'none';
   document.getElementById('modal-backdrop').classList.add('open');
@@ -853,14 +915,14 @@ window.openModal = function() {
 };
 window.closeModal = function() {
   document.getElementById('modal-backdrop').classList.remove('open');
-  warnedDebutChange = false;
+  warnedScheduleChange = false;
   document.getElementById('form-warn').style.display = 'none';
 };
 window.saveContrat = saveContratFn;
 
 window.editContrat = function(id) {
   editId = id;
-  warnedDebutChange = false;
+  warnedScheduleChange = false;
   const c = contrats.find(x => x.id === id);
   if (!c) return;
   document.getElementById('modal-title').textContent = 'Modifier le contrat';
@@ -873,7 +935,9 @@ window.editContrat = function(id) {
   const debutInput = document.getElementById('f-debut');
   debutInput.value = c.debut;
   debutInput.dataset.originalDebut = c.debut;
-  document.getElementById('f-duree').value = c.duree;
+  const dureeInput = document.getElementById('f-duree');
+  dureeInput.value = c.duree;
+  dureeInput.dataset.originalDuree = c.duree;
   document.getElementById('form-err').textContent = '';
   document.getElementById('form-warn').style.display = 'none';
   document.getElementById('modal-backdrop').classList.add('open');
@@ -905,6 +969,48 @@ window.confirmDeleteFn = async function() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg> Supprimer définitivement`;
+  }
+};
+
+// ── Modal versement ────────────────────────────────────────────────────────
+
+let versementTargetId = null;
+
+window.openVersementModal = function(id) {
+  if (!id) return;
+  const c = contrats.find(x => x.id === id);
+  if (!c) return;
+  versementTargetId = id;
+  const credit = c.credit || 0;
+  document.getElementById('versement-info').textContent = credit > 0
+    ? `${c.nom} · versement hebdo ${c.montant.toLocaleString('fr-FR')} FCFA · avance actuelle: ${credit.toLocaleString('fr-FR')} FCFA`
+    : `${c.nom} · versement hebdo ${c.montant.toLocaleString('fr-FR')} FCFA`;
+  document.getElementById('f-versement-montant').value = c.montant;
+  document.getElementById('versement-err').textContent = '';
+  document.getElementById('versement-modal').classList.add('open');
+  setTimeout(() => document.getElementById('f-versement-montant').focus(), 50);
+};
+window.closeVersementModal = function() {
+  document.getElementById('versement-modal').classList.remove('open');
+  versementTargetId = null;
+};
+window.confirmVersement = async function() {
+  if (!versementTargetId) return;
+  const montant = parseInt(document.getElementById('f-versement-montant').value) || 0;
+  const errEl = document.getElementById('versement-err');
+  errEl.textContent = '';
+  if (montant <= 0) { errEl.textContent = 'Veuillez indiquer un montant valide.'; return; }
+  const btn = document.getElementById('btn-versement');
+  btn.disabled = true;
+  btn.textContent = 'Enregistrement...';
+  try {
+    await enregistrerVersementFn(versementTargetId, montant);
+    closeVersementModal();
+  } catch {
+    errEl.textContent = 'Erreur lors de l\'enregistrement. Réessayez.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enregistrer';
   }
 };
 
