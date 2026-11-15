@@ -1,0 +1,14 @@
+import { z } from "zod";
+
+export const loginSchema = z.object({
+  email: z.string().trim().email("Email invalide"),
+  password: z.string().min(8, "Mot de passe trop court"),
+});
+
+export type LoginInput = z.infer<typeof loginSchema>;
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}

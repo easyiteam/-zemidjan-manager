@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+apps/api/.pgdata/
+apps/api/.pgdata-test/
+apps/web/dev-dist/
+*.log
+.DS_Store

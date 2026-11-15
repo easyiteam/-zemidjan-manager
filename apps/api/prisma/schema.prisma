@@ -1,0 +1,106 @@
+// Zémidjan Manager — schéma de données
+// Le client Prisma se connecte via APP_DATABASE_URL (rôle applicatif à droits
+// limités, cf. scripts/db-bootstrap.cjs) ; DATABASE_URL (rôle propriétaire)
+// n'est utilisé que par `prisma migrate` / `prisma generate`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VehicleType {
+  MOTO
+  TRICYCLE
+}
+
+enum Periodicity {
+  WEEKLY
+  MONTHLY
+}
+
+enum ContractStatus {
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum PaymentMode {
+  CASH
+  MOMO_MTN
+  MOMO_MOOV
+  CELTIIS_CASH
+  TRANSFER
+}
+
+/// Compte utilisateur (gérant / manager). Pas d'auto-inscription : les comptes
+/// sont créés via `pnpm --filter api seed:user`.
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+/// Famille de refresh tokens (rotation + détection de réutilisation).
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  familyId  String
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Contract {
+  id                String         @id @default(uuid())
+  driverName        String
+  phone             String?
+  idNumber          String?
+  guarantorName     String?
+  guarantorPhone    String?
+  vehicleType       VehicleType
+  brand             String?
+  plateNumber       String?
+  chassisNumber     String?
+  periodicity       Periodicity
+  installmentAmount Int
+  startDate         DateTime
+  installmentCount  Int
+  initialDeposit    Int            @default(0)
+  status            ContractStatus @default(ACTIVE)
+  notes             String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  payments          Payment[]
+
+  @@index([status])
+}
+
+model Payment {
+  id          String      @id @default(uuid())
+  contractId  String
+  contract    Contract    @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  date        DateTime
+  amount      Int
+  mode        PaymentMode @default(CASH)
+  reference   String?
+  senderPhone String?
+  captureKey  String?
+  smsText     String?
+  note        String?
+  createdAt   DateTime    @default(now())
+
+  @@index([contractId])
+  @@index([reference])
+}
