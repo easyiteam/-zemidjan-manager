@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.pgdata
+**/.pgdata-test
+**/coverage
+**/*.tsbuildinfo
+.git
+.github
+docs
+apps/api/.env
+apps/api/.env.*
+!apps/api/.env.example
+apps/web/dev-dist
+*.log
+.DS_Store

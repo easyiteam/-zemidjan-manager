@@ -34,9 +34,24 @@ railway add --service web --json
 
 Les deux `Dockerfile` du repo (`apps/api/Dockerfile`, `apps/web/Dockerfile`)
 construisent depuis la **racine du monorepo** (nécessaire pour résoudre
-`@zm/shared` via pnpm workspaces). Ils n'ont **pas pu être testés localement**
-(pas de Docker sur la machine de développement) — à valider au premier build
-Railway réel ; en cas d'échec, inspecter `railway logs --service <svc> --build`.
+`@zm/shared` via pnpm workspaces), avec un `.dockerignore` à la racine
+excluant `node_modules`/`dist`/etc. (sans quoi les `COPY` ré-y injectent les
+binaires natifs Windows du poste de dev par-dessus ceux installés dans
+l'image Linux).
+
+Pas de Docker sur la machine de développement, donc pas de `docker build`
+possible — mais chaque étape de chaque `Dockerfile` (install filtré,
+`prisma generate`, build, install `--prod`, démarrage de `dist/main.js`) a
+été rejouée à la main dans des dossiers temporaires reproduisant exactement
+les `COPY`/`RUN` de l'image, jusqu'à voir l'API échouer uniquement sur
+`Can't reach database server` (attendu, pas de vraie base dans la
+simulation). Un premier essai réel sur Railway avait échoué sur deux bugs
+trouvés par cette méthode : `tsconfig.base.json` jamais copié dans l'image
+(cassait tout le build TS) et `prisma` (le CLI) laissé en devDependency,
+absent de l'install `--prod` de l'étage runtime — tous deux corrigés et
+revérifiés de la même façon. Si un nouvel échec de build apparaît,
+reproduire ainsi avant de pousser un nouveau correctif à l'aveugle ; sinon
+inspecter `railway logs --service <svc> --build`.
 
 ```bash
 railway environment edit --service-config api build.builder DOCKERFILE
@@ -58,7 +73,21 @@ Le service `web` a besoin de relayer `/api/*` vers `api` (pas seulement de
 servir des fichiers statiques) : garder le Dockerfile nginx pour ce service,
 même si `api` passe en Railpack.
 
-## 3. Variables
+## 3. Domaines
+
+À créer **avant** l'étape Variables : `RAILWAY_PUBLIC_DOMAIN` d'un service
+n'existe comme variable référençable (`${{api.RAILWAY_PUBLIC_DOMAIN}}`) qu'une
+fois son domaine généré — y référencer un domaine pas encore créé résout vide.
+
+```bash
+railway domain --service api --json
+railway domain --service web --json
+```
+
+Seul le domaine de `web` est destiné aux utilisateurs ; celui de `api` ne sert
+qu'au relais nginx (peut rester un domaine `*.up.railway.app` généré).
+
+## 4. Variables
 
 `api` :
 
@@ -75,6 +104,9 @@ railway variable set S3_SECRET_KEY=<secret> --service api
 railway variable set S3_BUCKET=<nom-du-bucket> --service api
 railway variable set WEB_ORIGIN='https://${{web.RAILWAY_PUBLIC_DOMAIN}}' --service api
 ```
+
+(`WEB_ORIGIN` ne sert que de garde-fou CORS — en usage normal le navigateur ne
+parle qu'au domaine `web`, jamais directement à `api`.)
 
 `APP_DATABASE_URL` (rôle applicatif à droits limités, cf.
 `apps/api/scripts/db-bootstrap.cjs`) doit être généré une fois (mot de passe
@@ -93,21 +125,13 @@ railway environment edit --service-config api deploy.preDeployCommand "node scri
 railway environment edit --service-config api deploy.healthcheckPath /api/health
 ```
 
-`web` :
+`web` — l'image nginx écoute déjà sur `$PORT` (injecté par Railway) via
+`envsubst` au démarrage ; seule variable à poser est la cible du relais
+`/api/*` :
 
 ```bash
 railway variable set API_ORIGIN='https://${{api.RAILWAY_PUBLIC_DOMAIN}}' --service web
 ```
-
-## 4. Domaines
-
-```bash
-railway domain --service api --json
-railway domain --service web --json
-```
-
-Seul le domaine de `web` est destiné aux utilisateurs ; celui de `api` ne sert
-qu'au relais nginx (peut rester un domaine `*.up.railway.app` généré).
 
 ## 5. Premier déploiement
 

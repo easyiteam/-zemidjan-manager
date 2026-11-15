@@ -6,15 +6,18 @@ RUN corepack enable
 WORKDIR /repo
 
 FROM base AS deps
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
 COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
 RUN pnpm install --frozen-lockfile --filter @zm/api... --filter @zm/shared
 
 FROM deps AS build
 COPY packages/shared packages/shared
 COPY apps/api apps/api
-RUN pnpm --filter @zm/shared build && pnpm --filter @zm/api build
+RUN pnpm --filter @zm/shared build
+RUN pnpm --filter @zm/api exec prisma generate
+RUN pnpm --filter @zm/api build
 
 FROM base AS runtime
 ENV NODE_ENV=production
