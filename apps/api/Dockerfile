@@ -2,6 +2,11 @@
 # Non testé localement (pas de Docker sur la machine de dev) — à valider au
 # premier déploiement Railway ; voir docs/deployment.md.
 FROM node:22-slim AS base
+# node:22-slim (Debian 12 "bookworm") n'a pas libssl par défaut : le moteur
+# Prisma ne peut ni détecter la version OpenSSL au `generate` (il se rabat
+# sur le mauvais défaut "1.1.x") ni trouver la lib au runtime sans ceci.
+RUN apt-get update -y && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /repo
 

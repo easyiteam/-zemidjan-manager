@@ -45,13 +45,25 @@ possible — mais chaque étape de chaque `Dockerfile` (install filtré,
 été rejouée à la main dans des dossiers temporaires reproduisant exactement
 les `COPY`/`RUN` de l'image, jusqu'à voir l'API échouer uniquement sur
 `Can't reach database server` (attendu, pas de vraie base dans la
-simulation). Un premier essai réel sur Railway avait échoué sur deux bugs
-trouvés par cette méthode : `tsconfig.base.json` jamais copié dans l'image
-(cassait tout le build TS) et `prisma` (le CLI) laissé en devDependency,
-absent de l'install `--prod` de l'étage runtime — tous deux corrigés et
-revérifiés de la même façon. Si un nouvel échec de build apparaît,
-reproduire ainsi avant de pousser un nouveau correctif à l'aveugle ; sinon
-inspecter `railway logs --service <svc> --build`.
+simulation). Cette méthode tourne sur l'OS local (Windows) : elle a attrapé
+les bugs de fichiers/dépendances manquants, mais **pas** un bug spécifique à
+l'image Linux (voir ci-dessous) — pour ça il n'y a pas d'alternative à lire
+les logs Railway après un vrai déploiement.
+
+Bugs déjà trouvés et corrigés sur les premiers essais réels :
+- `tsconfig.base.json` jamais copié dans l'image (cassait tout le build TS,
+  trouvé par simulation).
+- `prisma` (le CLI) laissé en devDependency, absent de l'install `--prod` de
+  l'étage runtime (trouvé par simulation).
+- `node:22-slim` (Debian 12) n'a pas `libssl` par défaut : le moteur Prisma
+  ne peut ni détecter la version OpenSSL au `generate` ni trouver la lib au
+  runtime (`Prisma cannot find the required libssl system library`) — fixé
+  en installant `openssl` dans le stage `base` du Dockerfile ; **pas
+  détectable par la simulation locale** (spécifique à l'image Linux).
+
+Si un nouvel échec de build apparaît, reproduire la simulation avant de
+pousser un nouveau correctif à l'aveugle ; pour un échec au runtime (après
+build réussi), lire `railway logs --service <svc>` directement.
 
 ```bash
 railway environment edit --service-config api build.builder DOCKERFILE
