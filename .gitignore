@@ -7,5 +7,6 @@ coverage/
 apps/api/.pgdata/
 apps/api/.pgdata-test/
 apps/web/dev-dist/
+*.tsbuildinfo
 *.log
 .DS_Store
