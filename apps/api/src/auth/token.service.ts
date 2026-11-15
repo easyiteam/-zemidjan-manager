@@ -6,6 +6,9 @@ import type { AuthPayload } from "./decorators";
 
 const ACCESS_TTL = "15m";
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
+// Durée de vie maximale d'une famille de refresh tokens, même en cas de
+// rotation continue — force une reconnexion périodique.
+const FAMILY_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000; // 90 jours
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -41,8 +44,11 @@ export class TokenService {
   }
 
   /**
-   * Fait pivoter un refresh token : si le jeton présenté ne correspond pas au
-   * dernier jeton connu de sa famille, celle-ci est révoquée (rejeu détecté).
+   * Fait pivoter un refresh token. Le swap (vérification du hash + écriture
+   * du nouveau) est une seule opération atomique conditionnée sur l'ancien
+   * hash : si deux requêtes tentent de pivoter le même jeton en même temps
+   * (ou si le jeton présenté est périmé/déjà pivoté — rejeu), une seule
+   * réussit et l'autre révoque la famille entière.
    */
   async rotateRefreshToken(token: string): Promise<{ userId: string; token: string }> {
     const [familyId, raw] = token.split(".");
@@ -52,22 +58,23 @@ export class TokenService {
       where: { familyId },
       orderBy: { createdAt: "desc" },
     });
-    if (!session || session.revokedAt || session.expiresAt < new Date()) {
+    const familyTooOld = session && Date.now() - session.createdAt.getTime() > FAMILY_MAX_AGE_MS;
+    if (!session || session.revokedAt || session.expiresAt < new Date() || familyTooOld) {
       throw new UnauthorizedException("Session expirée — veuillez vous reconnecter");
     }
-    if (session.tokenHash !== sha256(raw)) {
-      await this.prisma.client.session.update({
-        where: { id: session.id },
+
+    const newRaw = randomBytes(32).toString("hex");
+    const { count } = await this.prisma.client.session.updateMany({
+      where: { id: session.id, tokenHash: sha256(raw), revokedAt: null },
+      data: { tokenHash: sha256(newRaw), expiresAt: new Date(Date.now() + REFRESH_TTL_MS) },
+    });
+    if (count !== 1) {
+      await this.prisma.client.session.updateMany({
+        where: { familyId, revokedAt: null },
         data: { revokedAt: new Date() },
       });
       throw new UnauthorizedException("Rejeu détecté — veuillez vous reconnecter");
     }
-
-    const newRaw = randomBytes(32).toString("hex");
-    await this.prisma.client.session.update({
-      where: { id: session.id },
-      data: { tokenHash: sha256(newRaw), expiresAt: new Date(Date.now() + REFRESH_TTL_MS) },
-    });
     return { userId: session.userId, token: `${familyId}.${newRaw}` };
   }
 

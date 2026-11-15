@@ -3,8 +3,13 @@ import type { ImportContractInput } from "@zm/shared";
 import { isMomoMode } from "@zm/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
+// Neutralise l'injection de formule CSV (un conducteur/référence commençant
+// par =, +, -, @ ou une tabulation serait interprété comme une formule par
+// Excel/LibreOffice à l'ouverture du fichier exporté).
 function csvCell(v: unknown): string {
-  return `"${String(v ?? "").replace(/"/g, '""')}"`;
+  let s = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 @Injectable()

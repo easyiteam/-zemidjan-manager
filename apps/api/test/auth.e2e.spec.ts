@@ -58,6 +58,27 @@ describe("Auth (e2e)", () => {
     await request(app.getHttpServer()).post("/api/auth/refresh").set("Cookie", newCookie).expect(401);
   });
 
+  it("une seule requête gagne en cas de pivot concurrent du même refresh token", async () => {
+    await createUser(app, "concurrent@zm.test", "password123", "Concurrent");
+    const login = await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email: "concurrent@zm.test", password: "password123" });
+    const cookie = login.headers["set-cookie"][0];
+
+    const [a, b] = await Promise.all([
+      request(app.getHttpServer()).post("/api/auth/refresh").set("Cookie", cookie),
+      request(app.getHttpServer()).post("/api/auth/refresh").set("Cookie", cookie),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([201, 401]);
+
+    // La famille a été révoquée par la tentative perdante : même le jeton
+    // du gagnant ne doit plus être utilisable.
+    const winner = a.status === 201 ? a : b;
+    const winnerCookie = winner.headers["set-cookie"][0];
+    await request(app.getHttpServer()).post("/api/auth/refresh").set("Cookie", winnerCookie).expect(401);
+  });
+
   it("révoque la session au logout", async () => {
     await createUser(app, "logout@zm.test", "password123", "Logout");
     const login = await request(app.getHttpServer())

@@ -25,11 +25,21 @@ async function main() {
 
   try {
     const passwordHash = await passwords.hash(password);
+    const existing = await prisma.user.findUnique({ where: { email } });
     const user = await prisma.user.upsert({
       where: { email },
       update: { passwordHash, name },
       create: { email, passwordHash, name },
     });
+    if (existing) {
+      // Réinitialisation d'un compte existant : les sessions (refresh
+      // tokens) émises avec l'ancien mot de passe ne doivent pas survivre.
+      const { count } = await prisma.session.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (count) console.log(`[seed-user] ${count} session(s) révoquée(s) suite à la réinitialisation.`);
+    }
     console.log(`[seed-user] compte prêt : ${user.email} (${user.name})`);
   } finally {
     await prisma.$disconnect();
