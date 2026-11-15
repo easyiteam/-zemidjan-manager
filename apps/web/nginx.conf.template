@@ -10,9 +10,15 @@ server {
   # Le navigateur ne parle qu'à ce domaine (cookie de refresh same-site) ;
   # nginx relaie /api/ vers le domaine PUBLIC du service api (pas de réseau
   # privé Railway possible depuis le navigateur).
+  #
+  # Pas de `proxy_set_header Host` ici : on laisse nginx envoyer par défaut
+  # le Host de l'upstream (celui de ${API_ORIGIN}), pas celui du client. Le
+  # edge Railway route par nom d'hôte/SNI — lui transmettre le Host du
+  # service web (comme le ferait un simple `$host`) ferait router vers le
+  # mauvais service, ou bloquer la connexion jusqu'au timeout (504).
   location /api/ {
     proxy_pass ${API_ORIGIN}/api/;
-    proxy_set_header Host $host;
+    proxy_ssl_server_name on;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
